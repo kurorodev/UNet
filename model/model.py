@@ -1,16 +1,20 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 class UNet(nn.Module):
     def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(1, 20, 5)
-        self.conv2 = nn.Conv2d(20, 20, 5)
+        super(UNet, self).__init__()
+        self.linear1 = torch.nn.Linear(100, 200)
+        self.activation = torch.nn.ReLU()
+        self.linear2 = torch.nn.Linear(200, 10)
+        self.softmax = torch.nn.Softmax()
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))
-        return F.relu(self.conv2(x))
+        x = self.linear1(x)
+        x = self.activation(x)
+        x = self.linear2(x)
+        x = self.softmax(x)
+        return x
 
 
 

@@ -1,12 +1,10 @@
 import pandas as pd
-import pandas as pd
 import numpy as np
 from feature_engine.encoding import RareLabelEncoder
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
-
-#y = df[main_label].values.reshape(-1,)  # Reshape the target variable as a 1D array
-#X = df.drop([main_label], axis=1)
-#X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0, stratify=y)
+from sklearn.utils.class_weight import compute_class_weight
+from catboost import Pool, CatBoostClassifier
 
 
 class AsteroidDataFrame:
@@ -16,9 +14,7 @@ class AsteroidDataFrame:
         self.main_label = 'is_hazardeous'
 
     def data_frame_optim(self):
-        item0 = self.df.shape[0]
         self.df = self.df.drop_duplicates()
-        item1 = self.df.shape[0]
 
         self.df = self.df[self.df['pha'].isin(['Y', 'N'])]
         self.df['is_hazardeous'] = (self.df['pha'] == 'Y').astype(int)
@@ -67,9 +63,44 @@ class AsteroidDataFrame:
         y = self.df[self.main_label].values.reshape(-1,)
         X = self.df.drop([self.main_label], axis=1)
 
+        cat_cols = self.df.select_dtypes(include=['object']).columns
+        cat_cols_idx = [list(X.columns).index(c) for c in cat_cols]
+
+
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0, stratify=y)
 
-        print("Shape of X_train:", X_train.shape)
-        print("Shape of X_test:", X_test.shape)
-        print("Shape of y_train:", y_train.shape)
-        print("Shape of y_test:", y_test.shape)
+        classes = np.unique(y_train)
+        weights = compute_class_weight(class_weight='balanced', classes=classes, y=y_train)
+        class_weights = dict(zip(classes, weights))
+        print(class_weights)
+
+        train_pool = Pool(X_train, 
+                          y_train, 
+                          cat_features=cat_cols_idx)
+        test_pool = Pool(X_test,
+                         y_test,
+                         cat_features=cat_cols_idx)
+        
+        # Specify the training parameters for the CatBoostClassifier
+        model = CatBoostClassifier(iterations=100,   # Number of boosting iterations
+                           depth=5,          # Depth of each tree in the ensemble
+                           border_count=22,  # Number of splits for numerical features
+                           l2_leaf_reg=0.3,  # L2 regularization strength
+                           learning_rate=2e-1, # Learning rate for gradient descent
+                           class_weights=class_weights,  # Weights for class balancing
+                           verbose=0)        # Control the verbosity of training
+        
+        model.fit(train_pool)
+
+# Make predictions using the resulting trained model for both training and testing data
+        y_train_pred = model.predict_proba(train_pool)[:, 1]  # Predicted probabilities for training data
+        y_test_pred = model.predict_proba(test_pool)[:, 1]    # Predicted probabilities for testing data
+
+# Calculate the ROC AUC score for both training and testing data
+        roc_auc_train = roc_auc_score(y_train, y_train_pred)  # ROC AUC score for training data
+        roc_auc_test = roc_auc_score(y_test, y_test_pred)     # ROC AUC score for testing data
+
+        model.plot_tree(tree_idx=0)
+
+# Print the ROC AUC scores for the training and testing data
+        print(f"ROC AUC score for train {round(roc_auc_train, 6)}, and for test {round(roc_auc_test, 6)}")
